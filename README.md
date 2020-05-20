@@ -1,5 +1,4 @@
 # Crab_DM
-Repository for crab data management
 
 Repository to work on data management of the crab assemblage data from 2017-2020 associated with the large, interdisciplinary project APECS
 
