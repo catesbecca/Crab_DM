@@ -1,0 +1,258 @@
+---
+title: "crab_data_processing_2019"
+author: "Rebecca Cates"
+date: "5/18/2020"
+output: html_document
+---
+
+Brief description of data:
+Crab data abundance data was collected along the western coastline of Prince of Wales island from July to August, 2019 as part of a project studying eelgrass ecosystems. Four strings with 2 pots each were were set at 22 different eelgrass sites. Pots soaked for ~24 hours before being pulled up to identify, measure and sex the contents of the pot. This dataset is part of a time series that spans the years 2017-2020.
+
+
+Goal of this script :
+1) Rename columns to fix errors and match universal naming scheme defined by APECS lab. 
+2) Check maximum and minimum values of numeric values to see if they make sense within the context of      the column.
+3) Trim whitespace in cells.
+4) Check that absent data is referenced using the appropriate null value ("NA").
+5) Check for accuracy of data type and fix if needed (e.g., factor, numeric, character)
+6) Check for consistency across sites and taxonomy using APECS lab universal naming conventions
+7) Create a primary key column combining species code and year so that data from 2017, 2018 and 2019 can    be joined eventually
+8) Create a secondary key column combining year and site to eventually join crab data with sea otter       data based on site
+9) Check for dupilcates of unique values and fix if needed
+10) Reorganize columns to tidy appearance
+
+*Metacarcinus gracilis and Metacarcinus magister will not be converted to "Metacarcinus spp." in this script like they were in 2017 and 2018 due to identification inconsistencies. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load packages
+```{r warning=FALSE}
+library(dplyr)
+library(tidyr)
+```
+
+#Read in raw 2019 data and replace blanks with NA
+#Read in naming conventions for sites and species from KNB
+```{r}
+raw_crab19<- read.csv("C:/Users/cates/OneDrive/Documents/UAF/Data 2019/Crab/raw_crab_data_2019.csv", header = TRUE, stringsAsFactors = FALSE, na.strings=c("","NA")) #eventually source from KNB
+
+site_names <- read.csv("C:/Users/cates/OneDrive/Documents/UAF/Data 2019/Crab/Site_universalnames_allyears.csv", header = TRUE, stringsAsFactors = FALSE, na.strings=c("","NA"))
+
+
+sp_names <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3Abc823c8e-7be3-444b-a872-2e450ea3e85b", method = "libcurl"),stringsAsFactors = FALSE)
+
+```
+
+#Rename columns
+```{r}
+#rename columns in raw_crab19 to match columns in sp_names and site_names
+#necessary for left_join later
+
+raw_crab19 <- raw_crab19 %>% 
+  rename(site_2019_code = ï..) %>%
+  rename(Sp_ScientificName = species_scientific)%>% 
+  rename(SpCode = sp_code)%>% 
+  rename(Sp_CommonName = species_common)%>% 
+  rename(Taxa = taxon)
+
+```
+
+#Add APECS lab universal site naming convention column $bay_code and $bay_sample
+```{r}
+#check that the length of the site columns are equal
+length(table(raw_crab19$site_2019)) == length(table(raw_crab19$site))
+raw_crab19$site = trimws(raw_crab19$site, which = c("both", "left", "right"))
+length(table(raw_crab19$site)) == length(table(raw_crab19$site_2019_code))
+
+#create temporary site_names data frame with columns of interest to be joined with raw_crab2019 dataframe
+site_names.tmp = site_names[,c("site_2019_code", "bay_code", "bay_sample")]
+colnames(site_names.tmp)
+
+#join site_names.tmp and raw_crab19
+raw_crab19 = left_join(raw_crab19, site_names.tmp, by = "site_2019_code")
+head(raw_crab19)
+
+```
+
+#Check spelling in raw_crab19$Sp_ScientificName, $SpCode, Sp_CommonName
+```{r}
+#Check for spelling errors in raw_crab19$Sp_ScientificName
+table(raw_crab19$Sp_ScientificName)
+#4 mistakes
+#Let's fix em
+raw_crab19$Sp_ScientificName[raw_crab19$Sp_ScientificName == "Pisaster ochraceau"]  = "Pisaster ochraceus"
+raw_crab19$Sp_ScientificName[raw_crab19$Sp_ScientificName == "Asteroidea"]  = "Asteroidea spp."
+raw_crab19$Sp_ScientificName[raw_crab19$Sp_ScientificName == "Cancridae"]  = "Cancridae spp."
+raw_crab19$Sp_ScientificName[raw_crab19$Sp_ScientificName == "Decapoda"]  = "Decapoda spp."
+raw_crab19$Sp_ScientificName[raw_crab19$Sp_ScientificName == "Metcarcinus magister"]  = "Metacarcinus magister"
+
+
+#Check for spelling errors in raw_crab19$SpCode
+table(raw_crab19$SpCode)#3 mistakes
+#Let's fix em
+raw_crab19$SpCode[raw_crab19$SpCode == "SCULSTG"]  = "SCULPSTG"
+raw_crab19$SpCode[raw_crab19$SpCode == "STARSUN"]  = "STARPYCN"
+raw_crab19$SpCode[raw_crab19$SpCode == "UNSHRIMP"]  = "UNSHRM"
+
+
+#Check for spelling errors in raw_crab19$Sp_CommonName
+table(raw_crab19$Sp_CommonName) # 2 mistakes
+#Let's fix em
+raw_crab19$Sp_CommonName[raw_crab19$Sp_CommonName == "Sunflower seastar"]  = "Sunflower sea star"
+raw_crab19$Sp_CommonName[raw_crab19$Sp_CommonName == "Unidentified shrimp"]  = "unidentified shrimp"
+```
+
+#add missing species in sp_names
+#These errors should be fixed in the KNB file itself when we have permission to edit and this code section can be deleted
+```{r}
+
+sp_names <- add_row(sp_names, SpCode = "CRABMET", Sp_CommonName = "Metacarcinus spp.", Sp_ScientificName = "Metacarcinus spp.", Taxa = "invertebrate") 
+
+
+```
+
+#Join sp_names and raw_crab19 and check for mismatches
+```{r}
+#join sp_names and raw_crab19
+raw_crab19 = left_join(raw_crab19, sp_names, by = "SpCode")
+head(raw_crab19)
+
+#Check that duplicate columns are matching
+#Sp_CommonName
+table(raw_crab19$Sp_CommonName.x != raw_crab19$Sp_CommonName.y) #1 mismatched
+which(raw_crab19$Sp_CommonName.x != raw_crab19$Sp_CommonName.y) #row 123
+raw_crab19$Sp_CommonName.y = trimws(raw_crab19$Sp_CommonName.y, which = c("both", "left", "right"))
+table(raw_crab19$Sp_CommonName.x != raw_crab19$Sp_CommonName.y) #Looks good
+
+#Sp_ScientificName
+table(raw_crab19$Sp_ScientificName.x != raw_crab19$Sp_ScientificName.y) #Looks good
+
+#Taxa
+table(raw_crab19$Taxa.x != raw_crab19$Taxa.y) 
+#Different systems were used for $Taxa.x and $Taxa.y so none match. I am keeping $Taxa.y in the cleaned dataset
+    
+```
+
+#Rename columns, get rid of duplicate columns and reorder
+```{r}
+#remove duplicate columns
+raw_crab19 <- raw_crab19 %>% 
+  select(-site_2019_code, -Taxa.x, -Sp_CommonName.y,-Sp_ScientificName.y)
+
+#check
+colnames(raw_crab19)
+
+#rename the remaining duplicated columns
+raw_crab19 <- raw_crab19 %>% 
+  rename(Sp_ScientificName = Sp_ScientificName.x) %>% 
+  rename(Sp_CommonName = Sp_CommonName.x) %>% 
+  rename(Taxa = Taxa.y)
+
+#reorder to make tidy
+raw_crab19 <- raw_crab19 %>% 
+  select(bay_code, bay_sample, date_set, YYYYMMDD_set, time_set, date_pulled, YYYYMMDD_pulled, time_pulled, time_soak_hr, trap, string, Sp_CommonName, Sp_ScientificName, SpCode, Taxa, carapace_width_mm, sex, fork_length_mm, unmeasured, notes)
+
+#check
+colnames(raw_crab19)
+
+```
+
+#Rename Metacarcinus gracilis and magister to Metacarcinus spp. to account for identification inconsistency in field, 2017, 2018
+```{r}
+#raw_crab19$Sp_ScientificName[raw_crab19$Sp_ScientificName == "Metacarcinus magister"] = "Metacarcinus spp."
+#raw_crab19$Sp_ScientificName[raw_crab19$Sp_ScientificName == "Metacarcinus gracilis"] = "Metacarcinus spp."
+
+#raw_crab19$SpCode[raw_crab19$SpCode == "CRABDUN"] = "CRABMET"
+#raw_crab19$SpCode[raw_crab19$SpCode == "CRABGRA"] = "CRABMET"
+
+#raw_crab19$Sp_CommonName[raw_crab19$Sp_CommonName == "Dungeness crab"] = "Metacarcinus spp."
+#raw_crab19$Sp_CommonName[raw_crab19$Sp_CommonName == "Graceful rock crab"] = "Metacarcinus spp."
+
+```
+
+#Create a primary key column combining species code and year to join all years together at later point
+```{r}
+
+raw_crab19$pri.key = NA
+
+raw_crab19$pri.key <- paste(raw_crab19$SpCode, "19", sep = ".")
+
+```
+
+#Create a secondary key column combining year and site to join crab data with sea otter data based on site
+```{r}
+raw_crab19$sec_key = NA
+
+raw_crab19$sec_key <- paste(raw_crab19$bay_code, "19", sep = ".")
+```
+
+#Trim whitespace
+
+```{r}
+#remove leading and trailing whitespace
+raw_crab19 <- raw_crab19 %>%
+  mutate_if(is.character, trimws)
+
+```
+
+#Convert columns to factors that are characters
+```{r}
+raw_crab19 <- raw_crab19 %>%
+  mutate_if(is.character,as.factor)
+
+str(raw_crab19)
+
+```
+
+
+#Check number of unique levels within columns that are factors and fix if necessary
+
+```{r}
+str(raw_crab19)
+
+#Check for duplicates
+length(table(raw_crab19$bay_code)) #Should be 22 levels and there are
+length(unique(raw_crab19$bay_code)) #22 unique levels, no duplicates
+
+length(table(raw_crab19$trap)) #Should be 2 levels and there are not
+table(raw_crab19$trap) #fix the capitalization
+raw_crab19$trap[raw_crab19$trap == "Pot"]  = "pot"
+length(unique(raw_crab19$trap))#2 unique levels, no duplicates
+
+length(table(raw_crab19$sex)) #Should be 2 levels and there are
+table(raw_crab19$sex)
+length(unique(raw_crab19$sex)) #3 unique levels due to NAs, no duplicates
+
+length(table(raw_crab19$Taxa)) #Should be 2 levels and there are
+table(raw_crab19$Taxa)
+length(unique(raw_crab19$Taxa)) # 3 unique levels due to NAs, no duplicates
+
+#Check to see if unique lengths of $Sp_ScientificName, $SpCode, $SpCommonName match
+length(unique(raw_crab19$Sp_ScientificName)) == length(unique(raw_crab19$Sp_CommonName))
+length(unique(raw_crab19$Sp_ScientificName))== length(unique(raw_crab19$SpCode))
+#Looks good
+
+```
+
+#Check for NA values
+```{r}
+#Summarize NA values over all columns
+raw_crab19 %>%
+  select(everything()) %>%
+  summarise_all(funs(sum(is.na(.))))
+#NAs only in columns where they should be
+
+```
+
+#Check maximum and minimum values of numeric values to see if they make sense within context
+```{r}
+summary(raw_crab19)
+```
+
+#write clean dataframe to csv
+```{r}
+write.csv(raw_crab19, "clean_crab_data_2019.csv", row.names = FALSE)
+```
+
